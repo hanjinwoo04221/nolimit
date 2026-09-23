@@ -157,7 +157,7 @@ class DynamicContextAssembler:
         )
 
         stats = self.memory.get_stats()
-        project_total_tok = stats.get("total_tokens", 0)
+        project_total_tok = stats.get("total_tokens", 0) if isinstance(stats, dict) else 0
         compression_ratio = round((1.0 - (accumulated_code_tokens / max(1, project_total_tok))) * 100, 1) if project_total_tok > 0 else 0.0
 
         # Visual inspector metadata

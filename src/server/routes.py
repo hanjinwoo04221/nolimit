@@ -157,10 +157,15 @@ async def prepare_chat_context(req: ChatRequest):
     if not manager.project_path:
         raise HTTPException(status_code=400, detail="Please select a project directory first")
 
-    dialogue_history = [
-        DialogueTurn(role=m.get("role", "user"), content=m.get("content", ""))
-        for m in req.history
-    ]
+    dialogue_history = []
+    for m in req.history:
+        if isinstance(m, dict):
+            dialogue_history.append(DialogueTurn(
+                role=m.get("role", "user") if isinstance(m.get("role"), str) else "user",
+                content=m.get("content", "") if isinstance(m.get("content"), str) else str(m.get("content", ""))
+            ))
+        elif isinstance(m, str):
+            dialogue_history.append(DialogueTurn(role="user", content=m))
 
     assembled = manager.prepare_context(
         prompt=req.prompt,
@@ -179,10 +184,15 @@ async def stream_chat(req: ChatRequest):
     if not manager.project_path:
         raise HTTPException(status_code=400, detail="Please select and index a project directory first.")
 
-    dialogue_history = [
-        DialogueTurn(role=m.get("role", "user"), content=m.get("content", ""))
-        for m in req.history
-    ]
+    dialogue_history = []
+    for m in req.history:
+        if isinstance(m, dict):
+            dialogue_history.append(DialogueTurn(
+                role=m.get("role", "user") if isinstance(m.get("role"), str) else "user",
+                content=m.get("content", "") if isinstance(m.get("content"), str) else str(m.get("content", ""))
+            ))
+        elif isinstance(m, str):
+            dialogue_history.append(DialogueTurn(role="user", content=m))
 
     # 1. Assemble high-signal budgeted context
     assembled = manager.prepare_context(
@@ -226,15 +236,37 @@ async def stream_chat(req: ChatRequest):
             ):
                 if isinstance(chunk, dict) and chunk.get("type") == "tool_call":
                     for tcall in chunk.get("tool_calls", []):
-                        fn = tcall.get("function", {})
-                        t_name = fn.get("name", "")
-                        t_args = fn.get("arguments", {})
+                        if isinstance(tcall, str):
+                            t_name = tcall
+                            t_args = {}
+                        elif isinstance(tcall, dict):
+                            fn = tcall.get("function", {})
+                            if isinstance(fn, dict):
+                                t_name = fn.get("name", "")
+                                t_args = fn.get("arguments", {})
+                            elif isinstance(fn, str):
+                                t_name = fn
+                                t_args = {}
+                            else:
+                                t_name = ""
+                                t_args = {}
+                        else:
+                            continue
+
                         if isinstance(t_args, str):
                             try:
-                                t_args = json.loads(t_args)
+                                parsed = json.loads(t_args)
+                                if isinstance(parsed, dict):
+                                    t_args = parsed
+                                elif isinstance(parsed, str):
+                                    t_args = {"path": parsed}
+                                else:
+                                    t_args = {}
                             except Exception:
-                                pass
-                        
+                                t_args = {"path": t_args.strip()} if t_args.strip() else {}
+                        elif not isinstance(t_args, dict):
+                            t_args = {}
+
                         # Emit tool call notification
                         yield f"data: {json.dumps({'type': 'tool_call', 'tool': t_name, 'args': t_args}, ensure_ascii=False)}\n\n"
                         # Execute tool via built-in file operations or MCP
@@ -259,7 +291,16 @@ async def stream_chat(req: ChatRequest):
         action_pattern = re.compile(r'```action:(read_file|edit_file|create_file|list_dir)\s*\n(.*?)\n```', re.DOTALL)
         for action_name, action_json_str in action_pattern.findall(full_response):
             try:
-                action_args = json.loads(action_json_str.strip())
+                raw_str = action_json_str.strip()
+                try:
+                    action_args = json.loads(raw_str)
+                    if isinstance(action_args, str):
+                        action_args = {"path": action_args}
+                    elif not isinstance(action_args, dict):
+                        action_args = {}
+                except Exception:
+                    action_args = {"path": raw_str}
+
                 yield f"data: {json.dumps({'type': 'tool_call', 'tool': action_name, 'args': action_args}, ensure_ascii=False)}\n\n"
                 action_res = manager.execute_builtin_tool(action_name, action_args)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool': action_name, 'result': action_res}, ensure_ascii=False)}\n\n"

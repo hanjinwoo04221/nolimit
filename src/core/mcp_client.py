@@ -118,9 +118,11 @@ class MCPClient:
                         future = self._pending_requests.pop(req_id)
                         if not future.done():
                             if "error" in data:
-                                future.set_exception(RuntimeError(data["error"].get("message", "MCP error")))
+                                err_val = data["error"]
+                                err_msg = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
+                                future.set_exception(RuntimeError(err_msg))
                             else:
-                                future.set_result(data.get("result", {}))
+                                future.set_result(data.get("result", {}) if isinstance(data, dict) else {})
                 except json.JSONDecodeError:
                     continue
         except asyncio.CancelledError:
@@ -165,9 +167,11 @@ class MCPClient:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(self.config.url, json=payload)
                 data = res.json()
-                if "error" in data:
-                    raise RuntimeError(data["error"].get("message", "MCP error"))
-                return data.get("result", {})
+                if isinstance(data, dict) and "error" in data:
+                    err_val = data["error"]
+                    err_msg = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
+                    raise RuntimeError(err_msg)
+                return data.get("result", {}) if isinstance(data, dict) else {}
 
     async def _send_notification(self, method: str, params: Dict[str, Any]):
         payload = {
@@ -234,8 +238,10 @@ class MCPManager:
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                raw_servers = data.get("mcpServers", {})
+                raw_servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
                 for name, s_data in raw_servers.items():
+                    if not isinstance(s_data, dict):
+                        continue
                     transport = s_data.get("transport", "stdio" if "command" in s_data else "sse")
                     self.server_configs[name] = MCPServerConfig(
                         name=name,

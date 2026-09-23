@@ -94,11 +94,34 @@ class TestBuiltinFileTools(unittest.TestCase):
         self.assertIn("src", item_names)
 
     def test_execute_builtin_tool_dispatcher(self):
+        # Dict args
         res = self.manager.execute_builtin_tool("read_file", {"path": "hello.py"})
         self.assertTrue(res.get("success"))
 
+        # String JSON args
+        res_json_str = self.manager.execute_builtin_tool("read_file", '{"path": "hello.py"}')
+        self.assertTrue(res_json_str.get("success"))
+
+        # Raw string path args
+        res_raw_str = self.manager.execute_builtin_tool("read_file", "hello.py")
+        self.assertTrue(res_raw_str.get("success"))
+
+        # None args
+        res_none = self.manager.execute_builtin_tool("read_file", None)
+        self.assertIn("error", res_none)
+
         res_unknown = self.manager.execute_builtin_tool("unknown_tool", {})
         self.assertIn("error", res_unknown)
+
+        # Test history with strings in prepare_chat
+        client = TestClient(app)
+        client.post("/api/project/select", json={"project_path": str(self.project_path)})
+        resp = client.post("/api/chat/prepare", json={
+            "prompt": "test prompt",
+            "history": [{"role": "user", "content": "hi"}],
+            "custom_max_tokens": 4096
+        })
+        self.assertEqual(resp.status_code, 200)
 
     def test_file_api_endpoints(self):
         client = TestClient(app)

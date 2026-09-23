@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import time
 import re
@@ -508,8 +509,22 @@ class ProjectManager:
             }
         ]
 
-    def execute_builtin_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes a built-in file tool by name."""
+    def execute_builtin_tool(self, name: str, args: Any) -> Dict[str, Any]:
+        """Executes a built-in file tool by name, safely handling dict, json string, or path string."""
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+                if isinstance(parsed, dict):
+                    args = parsed
+                elif isinstance(parsed, str):
+                    args = {"path": parsed}
+                else:
+                    args = {}
+            except Exception:
+                args = {"path": args.strip()} if args.strip() else {}
+        elif not isinstance(args, dict):
+            args = {}
+
         if name == "read_file":
             return self.read_file_tool(
                 path=args.get("path", ""),

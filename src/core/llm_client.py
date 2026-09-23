@@ -112,13 +112,18 @@ class LocalLLMClient:
                             if line.strip():
                                 try:
                                     chunk = json.loads(line)
+                                    if not isinstance(chunk, dict):
+                                        continue
                                     msg = chunk.get("message", {})
-                                    
-                                    # Handle tool calls if returned
-                                    if msg.get("tool_calls"):
-                                        yield {"type": "tool_call", "tool_calls": msg["tool_calls"]}
+                                    if isinstance(msg, dict):
+                                        if msg.get("tool_calls"):
+                                            yield {"type": "tool_call", "tool_calls": msg["tool_calls"]}
+                                        content = msg.get("content", "")
+                                    elif isinstance(msg, str):
+                                        content = msg
+                                    else:
+                                        content = chunk.get("response", "")
 
-                                    content = msg.get("content", "")
                                     if content:
                                         yield content
                                     if chunk.get("done", False):
@@ -169,12 +174,29 @@ class LocalLLMClient:
                                 break
                             try:
                                 chunk = json.loads(data_str)
-                                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                if delta.get("tool_calls"):
-                                    yield {"type": "tool_call", "tool_calls": delta["tool_calls"]}
-                                content = delta.get("content", "")
-                                if content:
-                                    yield content
+                                if not isinstance(chunk, dict):
+                                    continue
+                                choices = chunk.get("choices", [])
+                                if isinstance(choices, list) and choices:
+                                    first_choice = choices[0]
+                                    if isinstance(first_choice, dict):
+                                        delta = first_choice.get("delta", {})
+                                        if isinstance(delta, dict):
+                                            if delta.get("tool_calls"):
+                                                yield {"type": "tool_call", "tool_calls": delta["tool_calls"]}
+                                            content = delta.get("content", "")
+                                            if content:
+                                                yield content
+                                        elif isinstance(delta, str) and delta:
+                                            yield delta
+
+                                        msg = first_choice.get("message", {})
+                                        if isinstance(msg, dict):
+                                            if msg.get("tool_calls"):
+                                                yield {"type": "tool_call", "tool_calls": msg["tool_calls"]}
+                                            content = msg.get("content", "")
+                                            if content:
+                                                yield content
                             except json.JSONDecodeError:
                                 continue
             except httpx.ConnectError:
