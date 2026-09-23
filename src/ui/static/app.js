@@ -57,6 +57,22 @@ const ltmSearchResults = document.getElementById("ltm-search-results");
 const episodesTimelineList = document.getElementById("episodes-timeline-list");
 const refreshEpisodesBtn = document.getElementById("refresh-episodes-btn");
 
+// MCP elements
+const mcpStatusBadge = document.getElementById("mcp-status-badge");
+const mcpStatusText = document.getElementById("mcp-status-text");
+const refreshMcpBtn = document.getElementById("refresh-mcp-btn");
+const mcpServersList = document.getElementById("mcp-servers-list");
+const mcpToolsList = document.getElementById("mcp-tools-list");
+const mcpToolsCountBadge = document.getElementById("mcp-tools-count-badge");
+const mcpNameInput = document.getElementById("mcp-name-input");
+const mcpTransportSelect = document.getElementById("mcp-transport-select");
+const mcpCommandInput = document.getElementById("mcp-command-input");
+const mcpArgsInput = document.getElementById("mcp-args-input");
+const mcpUrlInput = document.getElementById("mcp-url-input");
+const mcpStdioFields = document.getElementById("mcp-stdio-fields");
+const mcpSseFields = document.getElementById("mcp-sse-fields");
+const addMcpServerBtn = document.getElementById("add-mcp-server-btn");
+
 // Modal elements
 const repoModal = document.getElementById("repo-modal");
 const repoMapContent = document.getElementById("repo-map-content");
@@ -67,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initEvents();
     checkHealthAndModels();
     autoPopulateCurrentDirectory();
+    loadMCPServers();
 });
 
 function initEvents() {
@@ -146,6 +163,17 @@ function initEvents() {
 
     // Episodes refresh
     refreshEpisodesBtn.addEventListener("click", loadEpisodes);
+
+    // MCP Listeners
+    if (refreshMcpBtn) refreshMcpBtn.addEventListener("click", loadMCPServers);
+    if (mcpTransportSelect) {
+        mcpTransportSelect.addEventListener("change", () => {
+            const isStdio = mcpTransportSelect.value === "stdio";
+            mcpStdioFields.style.display = isStdio ? "block" : "none";
+            mcpSseFields.style.display = isStdio ? "none" : "block";
+        });
+    }
+    if (addMcpServerBtn) addMcpServerBtn.addEventListener("click", handleAddMCPServer);
 
     // Suggestions
     quickSuggestions.addEventListener("click", (e) => {
@@ -383,6 +411,18 @@ async function sendMessage() {
                         accumulatedContent += event.token;
                         bubble.innerHTML = marked.parse(accumulatedContent);
                         hljs.highlightAll();
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    } else if (event.type === "tool_call") {
+                        const callBanner = document.createElement("div");
+                        callBanner.className = "tool-call-banner";
+                        callBanner.innerHTML = `<i class="fa-solid fa-gear fa-spin"></i> [MCP 실행] <strong>${escapeHtml(event.tool)}</strong> (${escapeHtml(JSON.stringify(event.args))})`;
+                        assistantMsgElem.appendChild(callBanner);
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    } else if (event.type === "tool_result") {
+                        const resBox = document.createElement("div");
+                        resBox.className = "tool-result-box";
+                        resBox.innerHTML = `<div><i class="fa-solid fa-check"></i> <strong>[도구 결과: ${escapeHtml(event.tool)}]</strong></div><pre><code>${escapeHtml(JSON.stringify(event.result, null, 2))}</code></pre>`;
+                        assistantMsgElem.appendChild(resBox);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     } else if (event.type === "proposals") {
                         // Render Code Modification Card
@@ -634,4 +674,182 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+// --- MCP MANAGEMENT FUNCTIONS ---
+async function loadMCPServers() {
+    if (!mcpServersList) return;
+    try {
+        const [serverRes, toolRes] = await Promise.all([
+            fetch("/api/mcp/servers"),
+            fetch("/api/mcp/tools")
+        ]);
+
+        const servers = await serverRes.json();
+        const toolsData = await toolRes.json();
+        const tools = toolsData.tools || [];
+
+        // Update badge
+        if (mcpStatusText) {
+            mcpStatusText.textContent = `MCP: ${tools.length}개 도구`;
+        }
+        if (mcpToolsCountBadge) {
+            mcpToolsCountBadge.textContent = `${tools.length}개`;
+        }
+
+        // Render Servers
+        mcpServersList.innerHTML = "";
+        const serverKeys = Object.keys(servers);
+        if (serverKeys.length === 0) {
+            mcpServersList.innerHTML = `<p class="placeholder-text">등록된 MCP 서버가 없습니다.</p>`;
+        } else {
+            serverKeys.forEach(name => {
+                const s = servers[name];
+                const card = document.createElement("div");
+                card.className = "mcp-server-card";
+                card.innerHTML = `
+                    <div class="mcp-server-info">
+                        <span class="mcp-server-name">${escapeHtml(name)}</span>
+                        <span class="mcp-server-desc">도구 ${s.tools ? s.tools.length : 0}개 | ${escapeHtml(s.status || '')}</span>
+                    </div>
+                    <div class="mcp-server-actions">
+                        <span class="mcp-status-tag ${s.connected ? 'online' : 'offline'}">
+                            ${s.connected ? '연결됨' : '연결 끊김'}
+                        </span>
+                        <button class="icon-btn-sm" data-delete-mcp="${escapeHtml(name)}" title="삭제">
+                            <i class="fa-solid fa-trash" style="color:var(--accent-rose)"></i>
+                        </button>
+                    </div>
+                `;
+                const delBtn = card.querySelector(`[data-delete-mcp]`);
+                delBtn.addEventListener("click", () => handleDeleteMCPServer(name));
+                mcpServersList.appendChild(card);
+            });
+        }
+
+        // Render Tools
+        mcpToolsList.innerHTML = "";
+        if (tools.length === 0) {
+            mcpToolsList.innerHTML = `<p class="placeholder-text">사용 가능한 MCP 도구가 없습니다.</p>`;
+        } else {
+            tools.forEach(t => {
+                const card = document.createElement("div");
+                card.className = "mcp-tool-card";
+                card.innerHTML = `
+                    <div class="mcp-tool-header">
+                        <span class="mcp-tool-name">${escapeHtml(t.server_name)}__${escapeHtml(t.name)}</span>
+                        <button class="btn btn-secondary btn-sm" data-run-tool="${escapeHtml(t.server_name)}__${escapeHtml(t.name)}">
+                            <i class="fa-solid fa-play"></i> 테스트 실행
+                        </button>
+                    </div>
+                    <div class="mcp-tool-desc">${escapeHtml(t.description || '설명 없음')}</div>
+                `;
+                const runBtn = card.querySelector(`[data-run-tool]`);
+                runBtn.addEventListener("click", () => handleTestTool(`${t.server_name}__${t.name}`));
+                mcpToolsList.appendChild(card);
+            });
+        }
+
+    } catch (e) {
+        console.warn("Failed to load MCP status", e);
+    }
+}
+
+async function handleAddMCPServer() {
+    const name = mcpNameInput.value.trim();
+    const transport = mcpTransportSelect.value;
+    const command = mcpCommandInput.value.trim();
+    const rawArgs = mcpArgsInput.value.trim();
+    const url = mcpUrlInput.value.trim();
+
+    if (!name) {
+        alert("서버 이름을 입력해주세요.");
+        return;
+    }
+
+    if (transport === "stdio" && !command) {
+        alert("실행 명령어(Command)를 입력해주세요 (예: uvx, npx, python).");
+        return;
+    }
+
+    if (transport === "sse" && !url) {
+        alert("SSE URL을 입력해주세요.");
+        return;
+    }
+
+    const args = rawArgs ? rawArgs.split(",").map(a => a.trim()).filter(Boolean) : [];
+
+    addMcpServerBtn.disabled = true;
+    addMcpServerBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 연결 중...`;
+
+    try {
+        const res = await fetch("/api/mcp/server", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name,
+                transport,
+                command: transport === "stdio" ? command : null,
+                args: transport === "stdio" ? args : [],
+                url: transport === "sse" ? url : null,
+                enabled: true
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "연결 실패");
+        }
+
+        alert(`MCP 서버 '${name}' 연결 성공!\n${data.message}`);
+        mcpNameInput.value = "";
+        mcpCommandInput.value = "";
+        mcpArgsInput.value = "";
+        mcpUrlInput.value = "";
+        await loadMCPServers();
+
+    } catch (e) {
+        alert("MCP 서버 추가 오류: " + e.message);
+    } finally {
+        addMcpServerBtn.disabled = false;
+        addMcpServerBtn.innerHTML = `<i class="fa-solid fa-link"></i> 서버 등록 및 연결`;
+    }
+}
+
+async function handleDeleteMCPServer(name) {
+    if (!confirm(`'${name}' MCP 서버를 삭제하시겠습니까?`)) return;
+    try {
+        await fetch(`/api/mcp/server?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+        await loadMCPServers();
+    } catch (e) {
+        alert("삭제 실패: " + e.message);
+    }
+}
+
+async function handleTestTool(namespacedToolName) {
+    const rawArgs = prompt(`도구 '${namespacedToolName}'에 전달할 JSON 인자를 입력하세요:\n(인자가 없으면 {} 입력)`, "{}");
+    if (rawArgs === null) return;
+
+    let parsedArgs = {};
+    try {
+        parsedArgs = JSON.parse(rawArgs);
+    } catch (e) {
+        alert("유효한 JSON 형식이 아닙니다.");
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/mcp/tool/call", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                tool_name: namespacedToolName,
+                arguments: parsedArgs
+            })
+        });
+        const result = await res.json();
+        alert(`[실행 결과]\n${JSON.stringify(result, null, 2)}`);
+    } catch (e) {
+        alert("도구 실행 오류: " + e.message);
+    }
 }

@@ -56,6 +56,12 @@
 - **Context Inspector (AI가 실제로 본 컨텍스트)**: AI에게 전달된 프롬프트와 참조된 코드 청크(파일, 라인, 매칭 점수, 이유)를 실시간 투명 공개.
 - **코드 자동 반영 (Apply to Project)**: AI가 코드 수정을 제안한 경우, 버튼 클릭 한 번으로 실제 프로젝트 파일에 반영 (기존 파일은 `.bak_YYYYMMDD_HHMMSS`로 자동 백업).
 
+### 4. 표준 MCP (Model Context Protocol) 연동
+- **오픈소스 MCP 생태계 지원**: `mcp-server-fetch` (웹 페이지 검색), `mcp-server-git` (버전 관리), `mcp-server-sqlite` 등 표준 `mcp_servers.json` 규격 완벽 호환.
+- **`stdio` 및 `sse` 전송**: 로컬 CLI 명령어 실행 및 원격 HTTP SSE 서버 지원.
+- **로컬 AI 도구 호출 루프**: 로컬 AI(Ollama / LM Studio)가 스스로 필요한 MCP 도구를 호출하고, 실행 결과를 바탕으로 정확한 답변 생성.
+- **대시보드 실시간 관리**: 서버 추가/삭제, 사용 가능한 도구 목록 및 파라미터 확인, 즉시 테스트 실행 지원.
+
 ---
 
 ## 🚀 빠른 시작 가이드 (Quick Start)

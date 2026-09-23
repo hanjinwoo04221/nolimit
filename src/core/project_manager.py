@@ -11,6 +11,7 @@ from src.core.chunker import CodeChunk
 from src.core.memory import LongTermMemoryManager, EpisodicMemory
 from src.core.context_assembler import DynamicContextAssembler, DialogueTurn, AssembledContext
 from src.core.llm_client import LocalLLMClient
+from src.core.mcp_client import MCPManager, MCPServerConfig, MCPToolDefinition
 
 class CodeModificationProposal(BaseModel):
     file_path: str
@@ -30,6 +31,7 @@ class ProjectManager:
         self.assembler: Optional[DynamicContextAssembler] = None
         self.llm_client = LocalLLMClient()
         self.summary: Optional[ProjectIndexSummary] = None
+        self.mcp_mgr = MCPManager()
 
         if self.project_path and self.project_path.exists():
             self._init_project(str(self.project_path))
@@ -41,6 +43,10 @@ class ProjectManager:
         db_path = memory_dir / "memory.db"
         self.memory_mgr = LongTermMemoryManager(str(db_path))
         self.assembler = DynamicContextAssembler(self.memory_mgr)
+        
+        # Load project-level MCP servers
+        mcp_cfg_path = memory_dir / config.mcp_config_filename
+        self.mcp_mgr = MCPManager(str(mcp_cfg_path))
 
     def set_project(self, project_path: str) -> Dict[str, Any]:
         """Changes or initializes the target project directory."""
@@ -232,3 +238,24 @@ class ProjectManager:
                 return f.read()
         except Exception:
             return None
+
+    # --- MCP Operations ---
+    async def get_mcp_servers(self) -> Dict[str, Any]:
+        """Returns all configured MCP servers and their current status."""
+        return await self.mcp_mgr.connect_all()
+
+    async def add_mcp_server(self, cfg: MCPServerConfig) -> Tuple[bool, str]:
+        """Registers and connects an MCP server."""
+        return await self.mcp_mgr.add_server(cfg)
+
+    async def remove_mcp_server(self, name: str) -> bool:
+        """Removes an MCP server."""
+        return await self.mcp_mgr.remove_server(name)
+
+    def get_mcp_tools(self) -> List[Dict[str, Any]]:
+        """Returns list of all available MCP tools."""
+        return [t.dict() for t in self.mcp_mgr.get_all_tools()]
+
+    async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes a tool on the responsible MCP server."""
+        return await self.mcp_mgr.execute_tool(tool_name, arguments)

@@ -33,6 +33,10 @@
                     <span class="dot"></span>
                     <span class="status-text">로컬 LLM 확인 중...</span>
                 </div>
+                <div id="mcp-status-badge" class="status-indicator">
+                    <i class="fa-solid fa-plug" style="color:var(--accent-purple)"></i>
+                    <span id="mcp-status-text">MCP: 0개 도구</span>
+                </div>
                 <button id="toggle-inspector-btn" class="icon-btn" title="컨텍스트 인스펙터 토글">
                     <i class="fa-solid fa-chart-pie"></i>
                     <span>컨텍스트 분석</span>
@@ -227,7 +231,10 @@
                         <i class="fa-solid fa-magnifying-glass"></i> LTM 검색
                     </button>
                     <button class="tab-btn" data-tab="tab-episodes">
-                        <i class="fa-solid fa-clock-rotate-left"></i> 에피소드 기억
+                        <i class="fa-solid fa-clock-rotate-left"></i> 에피소드
+                    </button>
+                    <button class="tab-btn" data-tab="tab-mcp">
+                        <i class="fa-solid fa-plug"></i> MCP 도구
                     </button>
                 </div>
 
@@ -298,6 +305,66 @@
                     </div>
                     <div id="episodes-timeline-list" class="timeline-list">
                         <p class="placeholder-text">저장된 에피소드가 없습니다.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 4: MCP Servers and Tools Management -->
+                <div id="tab-mcp" class="tab-content">
+                    <!-- Registered Servers Section -->
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-server"></i> 연결된 MCP 서버</h4>
+                            <button id="refresh-mcp-btn" class="icon-btn-sm" title="새로고침"><i class="fa-solid fa-rotate"></i></button>
+                        </div>
+                        <div id="mcp-servers-list" class="mcp-servers-list">
+                            <p class="placeholder-text">등록된 MCP 서버가 없습니다.</p>
+                        </div>
+                    </div>
+
+                    <!-- Add Server Section -->
+                    <div class="inspector-section">
+                        <h4><i class="fa-solid fa-plus-circle"></i> 새 MCP 서버 등록</h4>
+                        <div class="form-group">
+                            <label>서버 이름 (Identifier)</label>
+                            <input type="text" id="mcp-name-input" placeholder="예: fetch, git, sqlite" />
+                        </div>
+                        <div class="form-group">
+                            <label>전송 방식 (Transport)</label>
+                            <select id="mcp-transport-select">
+                                <option value="stdio" selected>stdio (로컬 프로세스 / CLI)</option>
+                                <option value="sse">sse (원격 HTTP 엔드포인트)</option>
+                            </select>
+                        </div>
+                        <div id="mcp-stdio-fields">
+                            <div class="form-group">
+                                <label>실행 명령어 (Command)</label>
+                                <input type="text" id="mcp-command-input" placeholder="예: uvx, npx, python" />
+                            </div>
+                            <div class="form-group">
+                                <label>인자 (Arguments - 쉼표로 구분)</label>
+                                <input type="text" id="mcp-args-input" placeholder="예: mcp-server-fetch" />
+                            </div>
+                        </div>
+                        <div id="mcp-sse-fields" style="display:none;">
+                            <div class="form-group">
+                                <label>SSE 엔드포인트 URL</label>
+                                <input type="text" id="mcp-url-input" placeholder="예: http://localhost:8000/sse" />
+                            </div>
+                        </div>
+                        <button id="add-mcp-server-btn" class="btn btn-primary btn-sm mt-1" style="width:100%;">
+                            <i class="fa-solid fa-link"></i> 서버 등록 및 연결
+                        </button>
+                    </div>
+
+                    <!-- Available Tools Catalog -->
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-toolbox"></i> 사용 가능한 도구 목록</h4>
+                            <span id="mcp-tools-count-badge" class="pill-count">0개</span>
+                        </div>
+                        <div id="mcp-tools-list" class="mcp-tools-list">
+                            <p class="placeholder-text">연결된 MCP 도구가 없습니다.</p>
+                        </div>
                     </div>
                 </div>
             </aside>

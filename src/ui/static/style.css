@@ -1006,3 +1006,118 @@ code {
 ::-webkit-scrollbar-thumb:hover {
     background: #3b4461;
 }
+
+/* MCP STYLING */
+.mcp-servers-list, .mcp-tools-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mcp-server-card {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mcp-server-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mcp-server-name {
+    font-weight: 600;
+    color: var(--accent-purple);
+    font-family: var(--font-mono);
+}
+
+.mcp-server-desc {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.mcp-server-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mcp-status-tag {
+    font-size: 0.68rem;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-weight: 500;
+}
+
+.mcp-status-tag.online {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.mcp-status-tag.offline {
+    background: rgba(244, 63, 94, 0.15);
+    color: var(--accent-rose);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.mcp-tool-card {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.76rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mcp-tool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mcp-tool-name {
+    color: var(--accent-cyan);
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+.mcp-tool-desc {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.4;
+}
+
+.tool-call-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #c4b5fd;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin: 6px 0;
+    font-family: var(--font-mono);
+}
+
+.tool-result-box {
+    background: #090c14;
+    border: 1px dashed rgba(139, 92, 246, 0.4);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin: 4px 0 8px;
+    max-height: 140px;
+    overflow-y: auto;
+}

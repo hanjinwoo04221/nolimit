@@ -10,6 +10,7 @@ from src.core.config import config, SystemConfig
 from src.core.project_manager import ProjectManager, CodeModificationProposal
 from src.core.context_assembler import DialogueTurn
 from src.core.llm_client import LocalLLMClient
+from src.core.mcp_client import MCPServerConfig
 
 router = APIRouter(prefix="/api")
 
@@ -33,6 +34,19 @@ class ApplyCodeRequest(BaseModel):
     file_path: str
     action: str
     code_content: str
+
+class MCPServerRequest(BaseModel):
+    name: str
+    transport: str = "stdio"
+    command: Optional[str] = None
+    args: List[str] = []
+    env: Dict[str, str] = {}
+    url: Optional[str] = None
+    enabled: bool = True
+
+class CallMCPToolRequest(BaseModel):
+    tool_name: str
+    arguments: Dict[str, Any] = {}
 
 @router.get("/health")
 async def get_health():
@@ -177,16 +191,36 @@ async def stream_chat(req: ChatRequest):
 
         # Step B: Stream tokens from local LLM
         accumulated_response = []
+        mcp_tools = manager.mcp_mgr.get_tools_for_llm() if config.enable_mcp else []
+
         try:
-            async for token in llm_client.stream_chat(
+            async for chunk in llm_client.stream_chat(
                 messages=assembled.messages,
                 model_name=req.model_name,
                 provider=req.provider,
-                temperature=req.temperature
+                temperature=req.temperature,
+                tools=mcp_tools if mcp_tools else None
             ):
-                accumulated_response.append(token)
-                token_event = {"type": "token", "token": token}
-                yield f"data: {json.dumps(token_event, ensure_ascii=False)}\n\n"
+                if isinstance(chunk, dict) and chunk.get("type") == "tool_call":
+                    for tcall in chunk.get("tool_calls", []):
+                        fn = tcall.get("function", {})
+                        t_name = fn.get("name", "")
+                        t_args = fn.get("arguments", {})
+                        if isinstance(t_args, str):
+                            try:
+                                t_args = json.loads(t_args)
+                            except Exception:
+                                pass
+                        
+                        # Emit tool call notification
+                        yield f"data: {json.dumps({'type': 'tool_call', 'tool': t_name, 'args': t_args}, ensure_ascii=False)}\n\n"
+                        # Execute tool via MCP
+                        t_res = await manager.execute_mcp_tool(t_name, t_args)
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': t_name, 'result': t_res}, ensure_ascii=False)}\n\n"
+                elif isinstance(chunk, str):
+                    accumulated_response.append(chunk)
+                    token_event = {"type": "token", "token": chunk}
+                    yield f"data: {json.dumps(token_event, ensure_ascii=False)}\n\n"
         except Exception as e:
             err_event = {"type": "error", "error": str(e)}
             yield f"data: {json.dumps(err_event, ensure_ascii=False)}\n\n"
@@ -257,3 +291,46 @@ async def clear_memory(session_id: str = Body("default", embed=True)):
     if manager.memory_mgr:
         manager.memory_mgr.clear_session(session_id)
     return {"success": True}
+
+# --- MCP (Model Context Protocol) Endpoints ---
+
+@router.get("/mcp/servers")
+async def get_mcp_servers():
+    """Returns all registered MCP servers and their active connection statuses."""
+    return await manager.get_mcp_servers()
+
+@router.post("/mcp/server")
+async def add_or_update_mcp_server(req: MCPServerRequest):
+    """Registers and establishes connection with an MCP server."""
+    cfg = MCPServerConfig(
+        name=req.name,
+        transport=req.transport,
+        command=req.command,
+        args=req.args,
+        env=req.env,
+        url=req.url,
+        enabled=req.enabled
+    )
+    ok, msg = await manager.add_mcp_server(cfg)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg}
+
+@router.delete("/mcp/server")
+async def delete_mcp_server(name: str = Query(...)):
+    """Removes and disconnects an MCP server."""
+    ok = await manager.remove_mcp_server(name)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    return {"success": True}
+
+@router.get("/mcp/tools")
+async def get_mcp_tools():
+    """Lists all available tools across connected MCP servers."""
+    return {"tools": manager.get_mcp_tools()}
+
+@router.post("/mcp/tool/call")
+async def call_mcp_tool(req: CallMCPToolRequest):
+    """Manually invokes an MCP tool for testing."""
+    result = await manager.execute_mcp_tool(req.tool_name, req.arguments)
+    return result

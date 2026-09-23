@@ -45,4 +45,8 @@ class SystemConfig(BaseModel):
     ]
     max_file_size_bytes: int = 500 * 1024  # 500 KB per file limit for indexing
 
+    # MCP (Model Context Protocol) settings
+    enable_mcp: bool = Field(default=True, description="Enable MCP server connectivity and tool execution")
+    mcp_config_filename: str = Field(default="mcp_servers.json", description="Configuration filename for MCP servers")
+
 config = SystemConfig()

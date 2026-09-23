@@ -65,18 +65,18 @@ class LocalLLMClient:
         model_name: Optional[str] = None,
         provider: Optional[str] = None,
         base_url: Optional[str] = None,
-        temperature: float = 0.3
-    ) -> AsyncGenerator[str, None]:
+        temperature: float = 0.3,
+        tools: Optional[List[Dict[str, Any]]] = None
+    ) -> AsyncGenerator[Any, None]:
         """
-        Streams response tokens from the local LLM runtime.
-        Falls back to informative demo response if no model is currently loaded.
+        Streams response tokens or tool call events from the local LLM runtime.
         """
         provider = provider or self.config.provider
         model = model_name or self.config.model_name
 
         if provider == "ollama":
             url = f"{base_url or self.config.ollama_url}/api/chat"
-            payload = {
+            payload: Dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "stream": True,
@@ -85,6 +85,8 @@ class LocalLLMClient:
                     "num_ctx": self.config.max_context_tokens
                 }
             }
+            if tools:
+                payload["tools"] = tools
 
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
@@ -99,6 +101,11 @@ class LocalLLMClient:
                                 try:
                                     chunk = json.loads(line)
                                     msg = chunk.get("message", {})
+                                    
+                                    # Handle tool calls if returned
+                                    if msg.get("tool_calls"):
+                                        yield {"type": "tool_call", "tool_calls": msg["tool_calls"]}
+
                                     content = msg.get("content", "")
                                     if content:
                                         yield content
@@ -117,13 +124,16 @@ class LocalLLMClient:
         else:
             # OpenAI Compatible (LM Studio / vLLM)
             url = f"{base_url or self.config.openai_url}/chat/completions"
-            payload = {
+            payload: Dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "stream": True,
                 "temperature": temperature,
                 "max_tokens": self.config.max_output_tokens
             }
+            if tools:
+                payload["tools"] = tools
+
             headers = {
                 "Authorization": f"Bearer {self.config.openai_api_key}",
                 "Content-Type": "application/json"
@@ -147,6 +157,8 @@ class LocalLLMClient:
                             try:
                                 chunk = json.loads(data_str)
                                 delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                if delta.get("tool_calls"):
+                                    yield {"type": "tool_call", "tool_calls": delta["tool_calls"]}
                                 content = delta.get("content", "")
                                 if content:
                                     yield content
