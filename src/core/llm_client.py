@@ -134,25 +134,6 @@ class LocalLLMClient:
             except Exception as e:
                 yield f"\n[연결 오류: {str(e)}]"
 
-    async def pull_model(self, model_name: str, base_url: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
-        """Streams Ollama model download progress."""
-        url = f"{base_url or self.config.ollama_url}/api/pull"
-        try:
-            async with httpx.AsyncClient(timeout=1800.0) as client:
-                async with client.stream("POST", url, json={"name": model_name, "stream": True}) as response:
-                    if response.status_code != 200:
-                        yield {"status": "error", "error": f"Ollama HTTP {response.status_code}"}
-                        return
-                    async for line in response.aiter_lines():
-                        if line.strip():
-                            try:
-                                data = json.loads(line)
-                                yield data
-                            except Exception:
-                                continue
-        except Exception as e:
-            yield {"status": "error", "error": str(e)}
-
         else:
             # OpenAI Compatible (LM Studio / vLLM)
             url = f"{base_url or self.config.openai_url}/chat/completions"
@@ -203,3 +184,23 @@ class LocalLLMClient:
                 )
             except Exception as e:
                 yield f"\n[연결 오류: {str(e)}]"
+
+    async def pull_model(self, model_name: str, base_url: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
+        """Streams Ollama model download progress."""
+        url = f"{base_url or self.config.ollama_url}/api/pull"
+        try:
+            async with httpx.AsyncClient(timeout=1800.0) as client:
+                async with client.stream("POST", url, json={"name": model_name, "stream": True}) as response:
+                    if response.status_code != 200:
+                        yield {"status": "error", "error": f"Ollama HTTP {response.status_code}"}
+                        return
+                    async for line in response.aiter_lines():
+                        if line.strip():
+                            try:
+                                data = json.loads(line)
+                                yield data
+                            except Exception:
+                                continue
+        except Exception as e:
+            yield {"status": "error", "error": str(e)}
+

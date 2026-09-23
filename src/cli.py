@@ -3,6 +3,19 @@ import sys
 import argparse
 import asyncio
 from pathlib import Path
+
+if sys.platform == "win32":
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 from src.core.config import config
 from src.core.project_manager import ProjectManager
 from src.core.context_assembler import DialogueTurn

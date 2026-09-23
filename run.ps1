@@ -1,5 +1,7 @@
 # ContextForge PowerShell Launcher
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host " 🧠 ContextForge - 무한 컨텍스트 로컬 AI 어시스턴트 실행기 (PowerShell)" -ForegroundColor Cyan
