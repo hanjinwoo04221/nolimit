@@ -1121,3 +1121,213 @@ code {
     max-height: 140px;
     overflow-y: auto;
 }
+
+/* MODEL PULL & PROGRESS */
+.model-pull-box {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.quick-pull-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.quick-pull-chips .chip-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.quick-pull-chip {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--accent-cyan);
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-pull-chip:hover {
+    border-color: var(--accent-cyan);
+    background: rgba(6, 182, 212, 0.1);
+}
+
+.pull-progress-container {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.progress-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
+    transition: width 0.2s ease;
+}
+
+.pull-status-text {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+/* FILE EXPLORER & EDITOR STYLING */
+.builtin-tools-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.builtin-tools-banner strong {
+    color: var(--accent-green);
+    font-family: var(--font-mono);
+}
+
+.file-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-tree-container {
+    max-height: 250px;
+    overflow-y: auto;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+}
+
+.tree-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.tree-item:hover {
+    background: var(--bg-card-hover);
+}
+
+.tree-item.selected {
+    background: rgba(99, 102, 241, 0.25);
+    color: var(--accent-cyan);
+    font-weight: 500;
+}
+
+.tree-item .tree-icon {
+    width: 14px;
+    text-align: center;
+    font-size: 0.75rem;
+}
+
+.tree-item.is-dir .tree-icon {
+    color: var(--accent-amber);
+}
+
+.tree-item.is-file .tree-icon {
+    color: var(--accent-cyan);
+}
+
+.tree-item .tree-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tree-item .tree-size {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+.file-editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.file-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.file-editor-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--accent-cyan);
+    font-weight: 600;
+    max-width: 65%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-editor-content {
+    width: 100%;
+    height: 260px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    padding: 8px;
+    resize: vertical;
+    outline: none;
+}
+
+.file-editor-content:focus {
+    border-color: var(--accent-primary);
+}
+
+.file-editor-status {
+    font-size: 0.72rem;
+    color: var(--accent-green);
+    min-height: 1rem;
+}
+

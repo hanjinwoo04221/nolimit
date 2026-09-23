@@ -91,7 +91,19 @@ class LocalLLMClient:
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     async with client.stream("POST", url, json=payload) as response:
-                        if response.status_code != 200:
+                        if response.status_code == 404:
+                            yield (
+                                f"\n\n> [!WARNING]\n"
+                                f"> **로컬 모델 '{model}'이 아직 Ollama에 다운로드되지 않았습니다.**\n\n"
+                                f"웹 대시보드 좌측 상단의 **[모델 다운로드]** 버튼을 클릭하거나, "
+                                f"명령 프롬프트/터미널에서 아래 명령을 실행해주세요:\n\n"
+                                f"```bash\n"
+                                f"ollama pull {model}\n"
+                                f"```\n\n"
+                                f"*(💡 용량이 작고 빠른 코딩 모델: `ollama pull qwen2.5-coder:1.5b` 추천)*"
+                            )
+                            return
+                        elif response.status_code != 200:
                             err_body = await response.aread()
                             yield f"\n[Ollama Error: Status {response.status_code} - {err_body.decode('utf-8', errors='ignore')}]"
                             return
@@ -115,11 +127,31 @@ class LocalLLMClient:
                                     continue
             except httpx.ConnectError:
                 yield (
-                    "\n[⚠️ 로컬 Ollama 서버에 연결할 수 없습니다. "
-                    "`ollama serve` 또는 Ollama 앱이 실행 중인지 확인해주세요.]"
+                    "\n\n> [!CAUTION]\n"
+                    "> **로컬 Ollama 서버에 연결할 수 없습니다.**\n\n"
+                    "Ollama 데스크톱 앱이 켜져 있는지 확인하거나, 터미널에서 `ollama serve`를 실행해주세요."
                 )
             except Exception as e:
                 yield f"\n[연결 오류: {str(e)}]"
+
+    async def pull_model(self, model_name: str, base_url: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
+        """Streams Ollama model download progress."""
+        url = f"{base_url or self.config.ollama_url}/api/pull"
+        try:
+            async with httpx.AsyncClient(timeout=1800.0) as client:
+                async with client.stream("POST", url, json={"name": model_name, "stream": True}) as response:
+                    if response.status_code != 200:
+                        yield {"status": "error", "error": f"Ollama HTTP {response.status_code}"}
+                        return
+                    async for line in response.aiter_lines():
+                        if line.strip():
+                            try:
+                                data = json.loads(line)
+                                yield data
+                            except Exception:
+                                continue
+        except Exception as e:
+            yield {"status": "error", "error": str(e)}
 
         else:
             # OpenAI Compatible (LM Studio / vLLM)

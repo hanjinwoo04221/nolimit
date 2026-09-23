@@ -73,6 +73,25 @@ const mcpStdioFields = document.getElementById("mcp-stdio-fields");
 const mcpSseFields = document.getElementById("mcp-sse-fields");
 const addMcpServerBtn = document.getElementById("add-mcp-server-btn");
 
+// Model Pull elements
+const pullModelNameInput = document.getElementById("pull-model-name-input");
+const pullModelBtn = document.getElementById("pull-model-btn");
+const pullProgressContainer = document.getElementById("pull-progress-container");
+const pullProgressBar = document.getElementById("pull-progress-bar");
+const pullStatusText = document.getElementById("pull-status-text");
+
+// File Explorer & Editor elements
+const refreshFilesBtn = document.getElementById("refresh-files-btn");
+const newFileBtn = document.getElementById("new-file-btn");
+const fileTreeContainer = document.getElementById("file-tree-container");
+const fileEditorSection = document.getElementById("file-editor-section");
+const activeFilePath = document.getElementById("active-file-path");
+const saveFileBtn = document.getElementById("save-file-btn");
+const closeEditorBtn = document.getElementById("close-editor-btn");
+const fileEditorContent = document.getElementById("file-editor-content");
+const fileEditorStatus = document.getElementById("file-editor-status");
+let currentEditingPath = null;
+
 // Modal elements
 const repoModal = document.getElementById("repo-modal");
 const repoMapContent = document.getElementById("repo-map-content");
@@ -152,6 +171,9 @@ function initEvents() {
             document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
             btn.classList.add("active");
             document.getElementById(btn.dataset.tab).classList.add("active");
+            if (btn.dataset.tab === "tab-files") {
+                loadFileTree();
+            }
         });
     });
 
@@ -174,6 +196,27 @@ function initEvents() {
         });
     }
     if (addMcpServerBtn) addMcpServerBtn.addEventListener("click", handleAddMCPServer);
+
+    // Model Pull Listeners
+    if (pullModelBtn) pullModelBtn.addEventListener("click", handlePullModel);
+    document.querySelectorAll(".quick-pull-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+            if (pullModelNameInput) {
+                pullModelNameInput.value = chip.dataset.model;
+                handlePullModel();
+            }
+        });
+    });
+
+    // File Explorer Listeners
+    if (refreshFilesBtn) refreshFilesBtn.addEventListener("click", loadFileTree);
+    if (newFileBtn) newFileBtn.addEventListener("click", handleCreateNewFile);
+    if (saveFileBtn) saveFileBtn.addEventListener("click", handleSaveFile);
+    if (closeEditorBtn) closeEditorBtn.addEventListener("click", () => {
+        if (fileEditorSection) fileEditorSection.style.display = "none";
+        currentEditingPath = null;
+        document.querySelectorAll(".tree-item").forEach(r => r.classList.remove("selected"));
+    });
 
     // Suggestions
     quickSuggestions.addEventListener("click", (e) => {
@@ -239,9 +282,12 @@ async function fetchModels() {
             if (coderModel) modelSelect.value = coderModel;
         } else {
             const opt = document.createElement("option");
-            opt.value = "qwen2.5-coder:7b";
-            opt.textContent = "qwen2.5-coder:7b (기본값)";
+            opt.value = "";
+            opt.textContent = "⚠️ 모델 없음 (아래에서 다운로드하세요)";
             modelSelect.appendChild(opt);
+            if (customModelInput) {
+                customModelInput.placeholder = "모델 다운로드 필요 (예: qwen2.5-coder:1.5b)";
+            }
         }
     } catch (e) {
         console.error("Failed to fetch models", e);
@@ -319,6 +365,7 @@ function updateProjectUI(data) {
     reindexBtn.disabled = false;
     viewRepoMapBtn.disabled = false;
     sendBtn.disabled = !promptInput.value.trim();
+    loadFileTree();
 }
 
 function showRepoMapModal() {
@@ -415,7 +462,7 @@ async function sendMessage() {
                     } else if (event.type === "tool_call") {
                         const callBanner = document.createElement("div");
                         callBanner.className = "tool-call-banner";
-                        callBanner.innerHTML = `<i class="fa-solid fa-gear fa-spin"></i> [MCP 실행] <strong>${escapeHtml(event.tool)}</strong> (${escapeHtml(JSON.stringify(event.args))})`;
+                        callBanner.innerHTML = `<i class="fa-solid fa-gear fa-spin"></i> [도구 실행] <strong>${escapeHtml(event.tool)}</strong> (${escapeHtml(JSON.stringify(event.args))})`;
                         assistantMsgElem.appendChild(callBanner);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     } else if (event.type === "tool_result") {
@@ -691,7 +738,7 @@ async function loadMCPServers() {
 
         // Update badge
         if (mcpStatusText) {
-            mcpStatusText.textContent = `MCP: ${tools.length}개 도구`;
+            mcpStatusText.textContent = `도구: 기본 4개 + MCP ${tools.length}개`;
         }
         if (mcpToolsCountBadge) {
             mcpToolsCountBadge.textContent = `${tools.length}개`;
@@ -851,5 +898,217 @@ async function handleTestTool(namespacedToolName) {
         alert(`[실행 결과]\n${JSON.stringify(result, null, 2)}`);
     } catch (e) {
         alert("도구 실행 오류: " + e.message);
+    }
+}
+
+// --- MODEL PULL FUNCTIONS ---
+async function handlePullModel() {
+    const modelName = pullModelNameInput.value.trim();
+    if (!modelName) {
+        alert("다운로드할 모델명을 입력하세요 (예: qwen2.5-coder:1.5b)");
+        return;
+    }
+
+    pullModelBtn.disabled = true;
+    pullProgressContainer.style.display = "flex";
+    pullProgressBar.style.width = "0%";
+    pullStatusText.textContent = `'${modelName}' 모델 다운로드 요청 중...`;
+
+    try {
+        const response = await fetch("/api/models/pull", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_name: modelName })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const jsonStr = line.replace("data: ", "").trim();
+                if (!jsonStr) continue;
+
+                try {
+                    const evt = JSON.parse(jsonStr);
+                    if (evt.status) {
+                        let percentStr = "";
+                        if (evt.total && evt.completed) {
+                            const pct = Math.min(100, Math.round((evt.completed / evt.total) * 100));
+                            pullProgressBar.style.width = pct + "%";
+                            percentStr = ` (${pct}%)`;
+                        }
+                        pullStatusText.textContent = `${evt.status}${percentStr}`;
+                    }
+                } catch (e) {
+                    console.error("Pull parse error", e);
+                }
+            }
+        }
+
+        pullProgressBar.style.width = "100%";
+        pullStatusText.textContent = `✅ '${modelName}' 다운로드 완료!`;
+        await fetchModels();
+        modelSelect.value = modelName;
+        alert(`'${modelName}' 모델이 성공적으로 다운로드되었습니다! 이제 AI와 대화할 수 있습니다.`);
+    } catch (e) {
+        pullStatusText.textContent = `❌ 오류: ${e.message}`;
+        alert(`모델 다운로드 실패: ${e.message}`);
+    } finally {
+        pullModelBtn.disabled = false;
+    }
+}
+
+// --- PROJECT FILE EXPLORER & EDITOR FUNCTIONS ---
+async function loadFileTree() {
+    if (!fileTreeContainer) return;
+    fileTreeContainer.innerHTML = `<p class="placeholder-text"><i class="fa-solid fa-spinner fa-spin"></i> 파일 목록 로딩 중...</p>`;
+
+    try {
+        const res = await fetch("/api/file/tree");
+        const data = await res.json();
+        const tree = data.tree || [];
+
+        if (tree.length === 0) {
+            fileTreeContainer.innerHTML = `<p class="placeholder-text">표시할 프로젝트 파일이 없습니다.</p>`;
+            return;
+        }
+
+        fileTreeContainer.innerHTML = "";
+        tree.forEach(item => {
+            const row = document.createElement("div");
+            row.className = `tree-item ${item.is_dir ? 'is-dir' : 'is-file'}`;
+            if (currentEditingPath === item.path) row.classList.add("selected");
+
+            const iconClass = item.is_dir ? "fa-folder" : getFileIcon(item.name);
+            const sizeStr = item.size ? formatBytes(item.size) : "";
+
+            row.innerHTML = `
+                <i class="fa-solid ${iconClass} tree-icon"></i>
+                <span class="tree-name" title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</span>
+                <span class="tree-size">${sizeStr}</span>
+            `;
+
+            if (!item.is_dir) {
+                row.addEventListener("click", () => handleOpenFile(item.path, row));
+            }
+            fileTreeContainer.appendChild(row);
+        });
+    } catch (e) {
+        fileTreeContainer.innerHTML = `<p class="placeholder-text" style="color:var(--accent-rose)">파일 목록 로드 실패: ${e.message}</p>`;
+    }
+}
+
+function getFileIcon(filename) {
+    if (!filename) return "fa-file";
+    if (filename.endsWith(".py")) return "fa-brands fa-python";
+    if (filename.endsWith(".js") || filename.endsWith(".ts")) return "fa-brands fa-js";
+    if (filename.endsWith(".html")) return "fa-brands fa-html5";
+    if (filename.endsWith(".css")) return "fa-brands fa-css3-alt";
+    if (filename.endsWith(".json")) return "fa-code";
+    if (filename.endsWith(".md")) return "fa-file-lines";
+    return "fa-file-code";
+}
+
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return "0 B";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+async function handleOpenFile(relPath, rowElement) {
+    document.querySelectorAll(".tree-item").forEach(r => r.classList.remove("selected"));
+    if (rowElement) rowElement.classList.add("selected");
+
+    currentEditingPath = relPath;
+    activeFilePath.textContent = relPath;
+    fileEditorStatus.textContent = "파일 불러오는 중...";
+    fileEditorStatus.style.color = "var(--text-secondary)";
+    fileEditorSection.style.display = "flex";
+
+    try {
+        const res = await fetch("/api/file/read", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_path: relPath })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "읽기 실패");
+
+        fileEditorContent.value = data.content;
+        fileEditorStatus.textContent = `불러옴 (${data.total_lines}줄, ${data.total_chars}자)`;
+        fileEditorStatus.style.color = "var(--accent-green)";
+    } catch (e) {
+        fileEditorStatus.textContent = `읽기 오류: ${e.message}`;
+        fileEditorStatus.style.color = "var(--accent-rose)";
+    }
+}
+
+async function handleSaveFile() {
+    if (!currentEditingPath) return;
+    if (!confirm(`'${currentEditingPath}' 파일을 저장하시겠습니까?\n기존 내용은 타임스탬프 .bak 백업 파일로 자동 보관됩니다.`)) return;
+
+    saveFileBtn.disabled = true;
+    fileEditorStatus.textContent = "저장 및 백업 생성 중...";
+    fileEditorStatus.style.color = "var(--accent-cyan)";
+
+    try {
+        const res = await fetch("/api/file/edit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                file_path: currentEditingPath,
+                content: fileEditorContent.value
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "저장 실패");
+
+        fileEditorStatus.textContent = `✅ 저장 완료! (자동 백업: ${data.backup_path})`;
+        fileEditorStatus.style.color = "var(--accent-green)";
+        loadFileTree();
+    } catch (e) {
+        fileEditorStatus.textContent = `❌ 저장 실패: ${e.message}`;
+        fileEditorStatus.style.color = "var(--accent-rose)";
+    } finally {
+        saveFileBtn.disabled = false;
+    }
+}
+
+async function handleCreateNewFile() {
+    const relPath = prompt("생성할 새 파일의 상대 경로를 입력하세요:\n(예: src/utils/helper.py, notes.md)");
+    if (!relPath || !relPath.trim()) return;
+
+    try {
+        const res = await fetch("/api/file/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                file_path: relPath.trim(),
+                content: ""
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "생성 실패");
+
+        alert(`'${relPath}' 파일이 생성되었습니다.`);
+        await loadFileTree();
+        handleOpenFile(relPath.trim());
+    } catch (e) {
+        alert("파일 생성 오류: " + e.message);
     }
 }

@@ -48,6 +48,26 @@ class CallMCPToolRequest(BaseModel):
     tool_name: str
     arguments: Dict[str, Any] = {}
 
+class PullModelRequest(BaseModel):
+    model_name: str
+
+class ReadFileRequest(BaseModel):
+    file_path: str
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+
+class EditFileRequest(BaseModel):
+    file_path: str
+    content: str
+
+class CreateFileRequest(BaseModel):
+    file_path: str
+    content: str
+
+class RestoreBackupRequest(BaseModel):
+    backup_path: str
+    target_path: str
+
 @router.get("/health")
 async def get_health():
     health = await llm_client.check_health()
@@ -191,7 +211,10 @@ async def stream_chat(req: ChatRequest):
 
         # Step B: Stream tokens from local LLM
         accumulated_response = []
+        builtin_tools = manager.get_builtin_tools_schema()
         mcp_tools = manager.mcp_mgr.get_tools_for_llm() if config.enable_mcp else []
+        all_tools = builtin_tools + mcp_tools
+        builtin_names = {"read_file", "edit_file", "create_file", "list_dir"}
 
         try:
             async for chunk in llm_client.stream_chat(
@@ -199,7 +222,7 @@ async def stream_chat(req: ChatRequest):
                 model_name=req.model_name,
                 provider=req.provider,
                 temperature=req.temperature,
-                tools=mcp_tools if mcp_tools else None
+                tools=all_tools if all_tools else None
             ):
                 if isinstance(chunk, dict) and chunk.get("type") == "tool_call":
                     for tcall in chunk.get("tool_calls", []):
@@ -214,8 +237,12 @@ async def stream_chat(req: ChatRequest):
                         
                         # Emit tool call notification
                         yield f"data: {json.dumps({'type': 'tool_call', 'tool': t_name, 'args': t_args}, ensure_ascii=False)}\n\n"
-                        # Execute tool via MCP
-                        t_res = await manager.execute_mcp_tool(t_name, t_args)
+                        # Execute tool via built-in file operations or MCP
+                        if t_name in builtin_names:
+                            t_res = manager.execute_builtin_tool(t_name, t_args)
+                        else:
+                            t_res = await manager.execute_mcp_tool(t_name, t_args)
+
                         yield f"data: {json.dumps({'type': 'tool_result', 'tool': t_name, 'result': t_res}, ensure_ascii=False)}\n\n"
                 elif isinstance(chunk, str):
                     accumulated_response.append(chunk)
@@ -228,10 +255,21 @@ async def stream_chat(req: ChatRequest):
 
         full_response = "".join(accumulated_response)
 
-        # Step C: Record in Long-Term Episodic Memory
+        # Step C: Parse and execute any explicit action blocks in the output
+        action_pattern = re.compile(r'```action:(read_file|edit_file|create_file|list_dir)\s*\n(.*?)\n```', re.DOTALL)
+        for action_name, action_json_str in action_pattern.findall(full_response):
+            try:
+                action_args = json.loads(action_json_str.strip())
+                yield f"data: {json.dumps({'type': 'tool_call', 'tool': action_name, 'args': action_args}, ensure_ascii=False)}\n\n"
+                action_res = manager.execute_builtin_tool(action_name, action_args)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool': action_name, 'result': action_res}, ensure_ascii=False)}\n\n"
+            except Exception:
+                pass
+
+        # Step D: Record in Long-Term Episodic Memory
         manager.record_turn(req.session_id, req.prompt, full_response)
 
-        # Step D: Detect any code modification proposals
+        # Step E: Detect any code modification proposals
         proposals = manager.extract_code_proposals(full_response)
         if proposals:
             prop_event = {
@@ -248,7 +286,7 @@ async def stream_chat(req: ChatRequest):
             }
             yield f"data: {json.dumps(prop_event, ensure_ascii=False)}\n\n"
 
-        # Step E: Done event
+        # Step F: Done event
         done_event = {"type": "done"}
         yield f"data: {json.dumps(done_event, ensure_ascii=False)}\n\n"
 
@@ -334,3 +372,56 @@ async def call_mcp_tool(req: CallMCPToolRequest):
     """Manually invokes an MCP tool for testing."""
     result = await manager.execute_mcp_tool(req.tool_name, req.arguments)
     return result
+
+# --- Model Pull & Diagnostics Endpoints ---
+
+@router.post("/models/pull")
+async def pull_model_endpoint(req: PullModelRequest):
+    """Streams Ollama model download progress via SSE."""
+    async def progress_generator():
+        async for progress in llm_client.pull_model(req.model_name):
+            yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+        yield "data: {\"status\": \"completed\"}\n\n"
+
+    return StreamingResponse(progress_generator(), media_type="text/event-stream")
+
+# --- Project File Operations Endpoints ---
+
+@router.get("/file/tree")
+async def get_file_tree():
+    """Returns flat file tree for the project explorer."""
+    if not manager.project_path:
+        return {"tree": []}
+    return {"tree": manager.get_project_file_tree()}
+
+@router.post("/file/read")
+async def read_file_endpoint(req: ReadFileRequest):
+    """Reads project file content."""
+    res = manager.read_file_tool(req.file_path, req.start_line, req.end_line)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
+
+@router.post("/file/edit")
+async def edit_file_endpoint(req: EditFileRequest):
+    """Edits a project file with automatic backup."""
+    res = manager.edit_file_tool(req.file_path, req.content)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
+
+@router.post("/file/create")
+async def create_file_endpoint(req: CreateFileRequest):
+    """Creates a new project file."""
+    res = manager.create_file_tool(req.file_path, req.content)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
+
+@router.post("/file/restore")
+async def restore_file_endpoint(req: RestoreBackupRequest):
+    """Restores a file from a backup."""
+    res = manager.restore_backup(req.backup_path, req.target_path)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res

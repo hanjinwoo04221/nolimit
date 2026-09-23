@@ -104,6 +104,30 @@
                         <input type="text" id="custom-model-input" placeholder="또는 직접 모델명 입력" class="mt-1" />
                     </div>
 
+                    <!-- Model Pull / Download Section -->
+                    <div class="model-pull-box mt-2">
+                        <div class="label-with-value">
+                            <label><i class="fa-solid fa-cloud-arrow-down"></i> 모델 다운로드 (Ollama Pull)</label>
+                        </div>
+                        <div class="input-group">
+                            <input type="text" id="pull-model-name-input" placeholder="예: qwen2.5-coder:1.5b" value="qwen2.5-coder:1.5b" />
+                            <button id="pull-model-btn" class="btn btn-primary btn-sm" title="Ollama 모델 다운로드">
+                                <i class="fa-solid fa-download"></i> 받기
+                            </button>
+                        </div>
+                        <div class="quick-pull-chips">
+                            <span class="chip-label">추천:</span>
+                            <button class="quick-pull-chip" data-model="qwen2.5-coder:1.5b">1.5B (빠름/1GB)</button>
+                            <button class="quick-pull-chip" data-model="qwen2.5-coder:7b">7B (정밀/4.7GB)</button>
+                        </div>
+                        <div id="pull-progress-container" class="pull-progress-container" style="display:none;">
+                            <div class="progress-bar-bg">
+                                <div id="pull-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+                            </div>
+                            <div id="pull-status-text" class="pull-status-text">다운로드 준비 중...</div>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <div class="label-with-value">
                             <label>컨텍스트 한도 (Context Limit)</label>
@@ -225,16 +249,19 @@
             <aside class="sidebar-right" id="inspector-panel">
                 <div class="inspector-tabs">
                     <button class="tab-btn active" data-tab="tab-context">
-                        <i class="fa-solid fa-filter"></i> 주입된 컨텍스트
+                        <i class="fa-solid fa-filter"></i> 컨텍스트
+                    </button>
+                    <button class="tab-btn" data-tab="tab-files">
+                        <i class="fa-solid fa-folder-open"></i> 파일 탐색기
                     </button>
                     <button class="tab-btn" data-tab="tab-search">
-                        <i class="fa-solid fa-magnifying-glass"></i> LTM 검색
+                        <i class="fa-solid fa-magnifying-glass"></i> 검색
                     </button>
                     <button class="tab-btn" data-tab="tab-episodes">
                         <i class="fa-solid fa-clock-rotate-left"></i> 에피소드
                     </button>
                     <button class="tab-btn" data-tab="tab-mcp">
-                        <i class="fa-solid fa-plug"></i> MCP 도구
+                        <i class="fa-solid fa-plug"></i> 도구 (MCP)
                     </button>
                 </div>
 
@@ -283,6 +310,46 @@
                         <div id="injected-memories-list" class="memory-card-list">
                             <p class="placeholder-text">회상된 에피소드 기억이 없습니다.</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Project File Explorer & Direct Editor -->
+                <div id="tab-files" class="tab-content">
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-folder-tree"></i> 프로젝트 파일 탐색기</h4>
+                            <div class="file-toolbar-actions">
+                                <button id="refresh-files-btn" class="icon-btn-sm" title="새로고침"><i class="fa-solid fa-rotate"></i></button>
+                                <button id="new-file-btn" class="btn btn-secondary btn-sm"><i class="fa-solid fa-file-circle-plus"></i> 새 파일</button>
+                            </div>
+                        </div>
+
+                        <!-- Built-in Tools Badge Info -->
+                        <div class="builtin-tools-banner">
+                            <i class="fa-solid fa-circle-check" style="color:var(--accent-green)"></i>
+                            <span>AI 기본 파일 도구 탑재: <strong>read_file</strong>, <strong>edit_file</strong> (자동 .bak 백업)</span>
+                        </div>
+
+                        <!-- File Tree Container -->
+                        <div class="file-tree-container" id="file-tree-container">
+                            <p class="placeholder-text">프로젝트를 불러오면 파일 목록이 표시됩니다.</p>
+                        </div>
+                    </div>
+
+                    <!-- File Editor Section -->
+                    <div class="file-editor-section" id="file-editor-section" style="display:none;">
+                        <div class="file-editor-header">
+                            <div class="file-editor-title">
+                                <i class="fa-solid fa-file-code"></i>
+                                <span id="active-file-path" class="active-file-path">파일명</span>
+                            </div>
+                            <div class="file-editor-actions">
+                                <button id="save-file-btn" class="btn btn-primary btn-sm"><i class="fa-solid fa-floppy-disk"></i> 저장 (.bak 백업)</button>
+                                <button id="close-editor-btn" class="icon-btn-sm" title="닫기"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <textarea id="file-editor-content" class="file-editor-content" placeholder="파일 내용..."></textarea>
+                        <div id="file-editor-status" class="file-editor-status"></div>
                     </div>
                 </div>
 
@@ -356,14 +423,52 @@
                         </button>
                     </div>
 
-                    <!-- Available Tools Catalog -->
+                    <!-- Built-in Core File Tools -->
                     <div class="inspector-section">
                         <div class="section-title-row">
-                            <h4><i class="fa-solid fa-toolbox"></i> 사용 가능한 도구 목록</h4>
+                            <h4><i class="fa-solid fa-screwdriver-wrench"></i> 기본 내장 도구 (Core Tools)</h4>
+                            <span class="pill-count" style="background:rgba(16, 185, 129, 0.2); color:var(--accent-green)">4개 활성</span>
+                        </div>
+                        <div class="builtin-tools-list">
+                            <div class="mcp-tool-card">
+                                <div class="mcp-tool-header">
+                                    <span class="mcp-tool-name" style="color:var(--accent-green)"><i class="fa-solid fa-file-lines"></i> read_file</span>
+                                    <span class="mcp-status-tag online">기본 활성</span>
+                                </div>
+                                <div class="mcp-tool-desc">프로젝트 파일 내용 및 특정 줄 범위를 안전하게 읽어옵니다.</div>
+                            </div>
+                            <div class="mcp-tool-card">
+                                <div class="mcp-tool-header">
+                                    <span class="mcp-tool-name" style="color:var(--accent-green)"><i class="fa-solid fa-file-pen"></i> edit_file</span>
+                                    <span class="mcp-status-tag online">자동 백업 (.bak)</span>
+                                </div>
+                                <div class="mcp-tool-desc">기존 파일을 수정합니다. 수정 전 타임스탬프 백업이 자동으로 생성됩니다.</div>
+                            </div>
+                            <div class="mcp-tool-card">
+                                <div class="mcp-tool-header">
+                                    <span class="mcp-tool-name" style="color:var(--accent-green)"><i class="fa-solid fa-file-circle-plus"></i> create_file</span>
+                                    <span class="mcp-status-tag online">기본 활성</span>
+                                </div>
+                                <div class="mcp-tool-desc">프로젝트 내에 새로운 파일을 생성합니다.</div>
+                            </div>
+                            <div class="mcp-tool-card">
+                                <div class="mcp-tool-header">
+                                    <span class="mcp-tool-name" style="color:var(--accent-green)"><i class="fa-solid fa-folder-open"></i> list_dir</span>
+                                    <span class="mcp-status-tag online">기본 활성</span>
+                                </div>
+                                <div class="mcp-tool-desc">프로젝트 디렉터리 내의 파일 및 하위 폴더 목록을 조회합니다.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Available MCP Tools Catalog -->
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-toolbox"></i> 연결된 MCP 도구</h4>
                             <span id="mcp-tools-count-badge" class="pill-count">0개</span>
                         </div>
                         <div id="mcp-tools-list" class="mcp-tools-list">
-                            <p class="placeholder-text">연결된 MCP 도구가 없습니다.</p>
+                            <p class="placeholder-text">연결된 외부 MCP 도구가 없습니다.</p>
                         </div>
                     </div>
                 </div>

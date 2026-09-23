@@ -239,6 +239,299 @@ class ProjectManager:
         except Exception:
             return None
 
+    # --- Built-in File Operations & Tools ---
+
+    def read_file_tool(self, path: str, start_line: Optional[int] = None, end_line: Optional[int] = None) -> Dict[str, Any]:
+        """Safely reads file contents with optional line range slice."""
+        if not self.project_path:
+            return {"error": "No project selected"}
+        
+        clean_path = path.strip().replace("\\", "/").lstrip("/")
+        target = (self.project_path / clean_path).resolve()
+        try:
+            target.relative_to(self.project_path)
+        except ValueError:
+            return {"error": f"Access denied: Path '{path}' is outside the project root."}
+
+        if not target.exists():
+            return {"error": f"File not found: '{clean_path}'"}
+        if not target.is_file():
+            return {"error": f"Target is a directory, not a file: '{clean_path}'"}
+
+        try:
+            with open(target, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except Exception as e:
+            return {"error": f"Failed to read file: {e}"}
+
+        lines = content.splitlines(keepends=True)
+        total_lines = len(lines)
+
+        if start_line is not None or end_line is not None:
+            s = max(1, start_line or 1)
+            e = min(total_lines, end_line or total_lines)
+            sliced_content = "".join(lines[s-1:e]).rstrip("\n")
+            return {
+                "success": True,
+                "file_path": clean_path,
+                "total_lines": total_lines,
+                "lines_shown": f"{s}-{e}",
+                "start_line": s,
+                "end_line": e,
+                "content": sliced_content
+            }
+
+        return {
+            "success": True,
+            "file_path": clean_path,
+            "total_lines": total_lines,
+            "content": content
+        }
+
+    def edit_file_tool(self, path: str, content: str) -> Dict[str, Any]:
+        """Edits an existing file with automatic timestamped backup."""
+        if not self.project_path:
+            return {"error": "No project selected"}
+
+        clean_path = path.strip().replace("\\", "/").lstrip("/")
+        target = (self.project_path / clean_path).resolve()
+        try:
+            target.relative_to(self.project_path)
+        except ValueError:
+            return {"error": f"Access denied: Path '{path}' is outside project root."}
+
+        backup_path = None
+        if target.exists():
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_file = target.with_name(f"{target.name}.bak_{timestamp}")
+            shutil.copy2(target, backup_file)
+            backup_path = str(backup_file.relative_to(self.project_path)).replace("\\", "/")
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        # Log change in episodic memory
+        if self.memory_mgr:
+            self.memory_mgr.add_episodic_memory(EpisodicMemory(
+                session_id="system",
+                memory_type="code_change",
+                summary=f"File edited: {clean_path}",
+                detail=f"Content updated ({len(content)} chars). Backup: {backup_path or 'None'}",
+                tags=f"edit,{clean_path}"
+            ))
+
+        return {
+            "success": True,
+            "file_path": clean_path,
+            "action": "edit",
+            "backup_created": backup_path,
+            "backup_path": backup_path,
+            "bytes_written": len(content.encode('utf-8'))
+        }
+
+    def create_file_tool(self, path: str, content: str) -> Dict[str, Any]:
+        """Creates a new file in the project."""
+        if not self.project_path:
+            return {"error": "No project selected"}
+
+        clean_path = path.strip().replace("\\", "/").lstrip("/")
+        target = (self.project_path / clean_path).resolve()
+        try:
+            target.relative_to(self.project_path)
+        except ValueError:
+            return {"error": f"Access denied: Path '{path}' is outside project root."}
+
+        if target.exists():
+            return {"error": f"File '{clean_path}' already exists. Use edit_file instead."}
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        # Log to memory
+        if self.memory_mgr:
+            self.memory_mgr.add_episodic_memory(EpisodicMemory(
+                session_id="system",
+                memory_type="code_change",
+                summary=f"File created: {clean_path}",
+                detail=f"Created new file with {len(content)} chars.",
+                tags=f"create,{clean_path}"
+            ))
+
+        return {
+            "success": True,
+            "file_path": clean_path,
+            "action": "create",
+            "bytes_written": len(content.encode('utf-8'))
+        }
+
+    def list_dir_tool(self, rel_path: str = ".") -> Dict[str, Any]:
+        """Lists files and folders inside a project sub-directory."""
+        if not self.project_path:
+            return {"error": "No project selected"}
+
+        clean_path = rel_path.strip().replace("\\", "/").lstrip("/")
+        target = (self.project_path / clean_path).resolve()
+        try:
+            target.relative_to(self.project_path)
+        except ValueError:
+            return {"error": "Access denied: Path is outside project root."}
+
+        if not target.exists() or not target.is_dir():
+            return {"error": f"Directory not found: '{clean_path}'"}
+
+        entries = []
+        for item in sorted(target.iterdir()):
+            if item.name.startswith(".") or item.name in config.ignored_directories:
+                continue
+            is_d = item.is_dir()
+            entries.append({
+                "name": item.name,
+                "type": "directory" if is_d else "file",
+                "relative_path": str(item.relative_to(self.project_path)).replace("\\", "/"),
+                "size_bytes": item.stat().st_size if not is_d else 0
+            })
+
+        return {
+            "success": True,
+            "directory": clean_path or ".",
+            "count": len(entries),
+            "entries": entries,
+            "items": entries
+        }
+
+    def restore_backup(self, backup_path: str, target_path: str) -> Dict[str, Any]:
+        """Restores a file from its backup copy."""
+        if not self.project_path:
+            return {"error": "No project selected"}
+
+        b_file = (self.project_path / backup_path).resolve()
+        t_file = (self.project_path / target_path).resolve()
+        b_file.relative_to(self.project_path)
+        t_file.relative_to(self.project_path)
+
+        if not b_file.exists():
+            return {"error": f"Backup file not found: {backup_path}"}
+
+        shutil.copy2(b_file, t_file)
+        return {
+            "success": True,
+            "restored_to": target_path,
+            "from_backup": backup_path
+        }
+
+    def get_project_file_tree(self) -> List[Dict[str, Any]]:
+        """Returns flat file list for UI file explorer."""
+        if not self.project_path or not self.project_path.exists():
+            return []
+
+        tree = []
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in config.ignored_directories and not d.startswith(".")]
+            for f in sorted(files):
+                if f.startswith(".") or Path(f).suffix.lower() in config.ignored_extensions:
+                    continue
+                p = Path(root) / f
+                try:
+                    rel = str(p.relative_to(self.project_path)).replace("\\", "/")
+                    tree.append({
+                        "path": rel,
+                        "name": f,
+                        "size": p.stat().st_size
+                    })
+                except Exception:
+                    continue
+        return tree
+
+    def get_builtin_tools_schema(self) -> List[Dict[str, Any]]:
+        """Returns standard Function Calling schemas for built-in file operations."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read the content of a file in the project. Use this whenever you need to inspect existing code or documentation.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Relative file path (e.g. 'src/core/config.py')"},
+                            "start_line": {"type": "integer", "description": "Optional 1-based start line"},
+                            "end_line": {"type": "integer", "description": "Optional 1-based end line"}
+                        },
+                        "required": ["path"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "edit_file",
+                    "description": "Edit or overwrite an existing file in the project. An automatic backup is created before writing.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Relative file path (e.g. 'src/utils.py')"},
+                            "content": {"type": "string", "description": "The complete updated content to write into the file"}
+                        },
+                        "required": ["path", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "description": "Create a new file in the project with the specified content.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Relative file path for the new file"},
+                            "content": {"type": "string", "description": "Initial content for the new file"}
+                        },
+                        "required": ["path", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_dir",
+                    "description": "List files and subdirectories within a folder of the project.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "rel_path": {"type": "string", "description": "Relative folder path (default: '.')"}
+                        }
+                    }
+                }
+            }
+        ]
+
+    def execute_builtin_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes a built-in file tool by name."""
+        if name == "read_file":
+            return self.read_file_tool(
+                path=args.get("path", ""),
+                start_line=args.get("start_line"),
+                end_line=args.get("end_line")
+            )
+        elif name == "edit_file":
+            return self.edit_file_tool(
+                path=args.get("path", ""),
+                content=args.get("content", "")
+            )
+        elif name == "create_file":
+            return self.create_file_tool(
+                path=args.get("path", ""),
+                content=args.get("content", "")
+            )
+        elif name == "list_dir":
+            return self.list_dir_tool(
+                rel_path=args.get("rel_path", ".")
+            )
+        return {"error": f"Unknown built-in tool '{name}'"}
+
     # --- MCP Operations ---
     async def get_mcp_servers(self) -> Dict[str, Any]:
         """Returns all configured MCP servers and their current status."""
