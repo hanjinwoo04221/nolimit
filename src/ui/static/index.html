@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContextForge | 무한 컨텍스트 로컬 AI 프로젝트 어시스턴트</title>
+    <!-- Modern Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Marked.js for markdown rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- TOP NAVIGATION BAR -->
+        <header class="top-nav">
+            <div class="brand">
+                <i class="fa-solid fa-brain-circuit brand-icon"></i>
+                <div class="brand-text">
+                    <h1>ContextForge</h1>
+                    <span class="badge">Infinite-Context Local AI</span>
+                </div>
+            </div>
+            <div class="top-actions">
+                <div id="llm-status-badge" class="status-indicator checking">
+                    <span class="dot"></span>
+                    <span class="status-text">로컬 LLM 확인 중...</span>
+                </div>
+                <button id="toggle-inspector-btn" class="icon-btn" title="컨텍스트 인스펙터 토글">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>컨텍스트 분석</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN 3-PANE LAYOUT -->
+        <div class="main-layout">
+            
+            <!-- LEFT PANEL: PROJECT & LLM SETTINGS -->
+            <aside class="sidebar-left">
+                <!-- Project Selector Section -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-folder-tree"></i>
+                        <h3>프로젝트 선택</h3>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="project-path-input" placeholder="프로젝트 폴더 절대 경로 (예: C:\MyProject)" />
+                        <button id="load-project-btn" class="btn btn-primary">
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="project-info-box" class="project-info-box empty">
+                        <p class="placeholder-text">프로젝트 경로를 입력하거나 선택하세요.</p>
+                    </div>
+
+                    <div class="action-buttons-row">
+                        <button id="reindex-btn" class="btn btn-secondary btn-sm" disabled>
+                            <i class="fa-solid fa-arrows-rotate"></i> 다시 인덱싱
+                        </button>
+                        <button id="view-repo-map-btn" class="btn btn-secondary btn-sm" disabled>
+                            <i class="fa-solid fa-sitemap"></i> 구조도 보기
+                        </button>
+                    </div>
+                </div>
+
+                <!-- LLM Provider Configuration -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-microchip"></i>
+                        <h3>로컬 모델 설정</h3>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>엔진 (Provider)</label>
+                        <select id="provider-select">
+                            <option value="ollama" selected>Ollama (기본: http://localhost:11434)</option>
+                            <option value="openai_compatible">OpenAI 호환 (LM Studio / vLLM)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>모델 선택</label>
+                        <div class="model-select-wrapper">
+                            <select id="model-select">
+                                <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option>
+                            </select>
+                            <button id="refresh-models-btn" class="icon-btn-sm" title="모델 새로고침">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
+                        </div>
+                        <input type="text" id="custom-model-input" placeholder="또는 직접 모델명 입력" class="mt-1" />
+                    </div>
+
+                    <div class="form-group">
+                        <div class="label-with-value">
+                            <label>컨텍스트 한도 (Context Limit)</label>
+                            <span id="context-limit-display" class="highlight-val">4,096 토큰</span>
+                        </div>
+                        <input type="range" id="context-limit-slider" min="2048" max="32768" step="1024" value="4096" />
+                        <div class="slider-marks">
+                            <span>2k</span>
+                            <span>4k</span>
+                            <span>8k</span>
+                            <span>16k</span>
+                            <span>32k</span>
+                        </div>
+                        <small class="hint-text">로컬 VRAM 크기에 맞춰 예산을 조정하세요.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="label-with-value">
+                            <label>창의성 (Temperature)</label>
+                            <span id="temp-display" class="highlight-val">0.3</span>
+                        </div>
+                        <input type="range" id="temp-slider" min="0.0" max="1.0" step="0.1" value="0.3" />
+                    </div>
+                </div>
+
+                <!-- Long-Term Memory Summary -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-database"></i>
+                        <h3>장기 기억 장치 (LTM)</h3>
+                    </div>
+                    <div class="ltm-stats">
+                        <div class="stat-item">
+                            <span class="stat-num" id="stat-files">-</span>
+                            <span class="stat-label">파일 수</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-num" id="stat-chunks">-</span>
+                            <span class="stat-label">코드 청크</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-num" id="stat-tokens">-</span>
+                            <span class="stat-label">전체 토큰</span>
+                        </div>
+                    </div>
+                    <div class="ltm-meta-pill">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>SQLite 영구 저장소 활성화됨</span>
+                    </div>
+                    <button id="clear-memory-btn" class="btn btn-danger btn-sm mt-2">
+                        <i class="fa-solid fa-trash"></i> 세션 기억 초기화
+                    </button>
+                </div>
+            </aside>
+
+            <!-- CENTER PANEL: CHAT & WORKSPACE -->
+            <main class="chat-workspace">
+                <div class="chat-header">
+                    <div class="chat-title">
+                        <span id="active-project-badge" class="project-tag">프로젝트 없음</span>
+                        <h2 id="session-title">스마트 어시스턴트 대화</h2>
+                    </div>
+                    <div class="chat-controls">
+                        <button id="clear-chat-btn" class="btn btn-secondary btn-sm" title="대화창 비우기">
+                            <i class="fa-solid fa-eraser"></i> 대화 비우기
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Message Thread Container -->
+                <div id="chat-messages" class="chat-messages">
+                    <div class="system-welcome">
+                        <div class="welcome-icon">
+                            <i class="fa-solid fa-brain"></i>
+                        </div>
+                        <h3>ContextForge에 오신 것을 환영합니다!</h3>
+                        <p>
+                            아무리 큰 프로젝트라도 전체를 덤프하지 않고, 
+                            <strong>장기 기억 장치(LTM)</strong>에서 필요한 파일 조각과 기억만 똑똑하게 골라 
+                            로컬 AI 모델에게 주입합니다.
+                        </p>
+                        <div class="quick-tips">
+                            <span><i class="fa-solid fa-check"></i> 좌측에서 프로젝트 폴더를 지정하세요.</span>
+                            <span><i class="fa-solid fa-check"></i> 로컬 모델(Ollama/LM Studio)을 연결하세요.</span>
+                            <span><i class="fa-solid fa-check"></i> 우측 패널에서 주입된 컨텍스트를 투명하게 확인하세요.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Prompt Suggestions -->
+                <div class="quick-suggestions" id="quick-suggestions">
+                    <button class="suggestion-chip" data-prompt="이 프로젝트의 전체 구조와 핵심 모듈 역할을 요약해줘.">
+                        <i class="fa-solid fa-sitemap"></i> 전체 구조 요약
+                    </button>
+                    <button class="suggestion-chip" data-prompt="이 프로젝트의 주요 진입점(Entry point)과 데이터 흐름을 설명해줘.">
+                        <i class="fa-solid fa-play"></i> 진입점 및 흐름 설명
+                    </button>
+                    <button class="suggestion-chip" data-prompt="이 프로젝트에서 개선할 수 있는 리팩토링이나 잠재적 버그 포인트를 찾아줘.">
+                        <i class="fa-solid fa-bug"></i> 개선 포인트 분석
+                    </button>
+                </div>
+
+                <!-- Chat Input Section -->
+                <div class="chat-input-wrapper">
+                    <div class="chat-input-box">
+                        <textarea id="prompt-input" placeholder="메시지를 입력하세요... (Enter: 전송, Shift+Enter: 줄바꿈)" rows="2"></textarea>
+                        <button id="send-btn" class="btn btn-primary send-btn" disabled>
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-footer">
+                        <span class="hint"><i class="fa-regular fa-keyboard"></i> Shift + Enter 줄바꿈</span>
+                        <span id="stream-status" class="stream-status"></span>
+                    </div>
+                </div>
+            </main>
+
+            <!-- RIGHT PANEL: CONTEXT INSPECTOR & MEMORY VIEWER -->
+            <aside class="sidebar-right" id="inspector-panel">
+                <div class="inspector-tabs">
+                    <button class="tab-btn active" data-tab="tab-context">
+                        <i class="fa-solid fa-filter"></i> 주입된 컨텍스트
+                    </button>
+                    <button class="tab-btn" data-tab="tab-search">
+                        <i class="fa-solid fa-magnifying-glass"></i> LTM 검색
+                    </button>
+                    <button class="tab-btn" data-tab="tab-episodes">
+                        <i class="fa-solid fa-clock-rotate-left"></i> 에피소드 기억
+                    </button>
+                </div>
+
+                <!-- Tab 1: Active Injected Context -->
+                <div id="tab-context" class="tab-content active">
+                    <div class="inspector-section">
+                        <h4><i class="fa-solid fa-gauge-high"></i> 토큰 예산 배분 (Token Budget)</h4>
+                        <div class="budget-meter">
+                            <div class="meter-bar">
+                                <div id="bar-system" class="bar-segment system" style="width: 15%;" title="시스템 지침"></div>
+                                <div id="bar-repo" class="bar-segment repo" style="width: 10%;" title="저장소 지도"></div>
+                                <div id="bar-code" class="bar-segment code" style="width: 45%;" title="선택된 코드 청크"></div>
+                                <div id="bar-memory" class="bar-segment memory" style="width: 10%;" title="에피소드 기억"></div>
+                                <div id="bar-dialogue" class="bar-segment dialogue" style="width: 15%;" title="최근 대화"></div>
+                            </div>
+                            <div class="budget-legend">
+                                <span><span class="dot system"></span>시스템</span>
+                                <span><span class="dot repo"></span>구조도</span>
+                                <span><span class="dot code"></span>코드 청크</span>
+                                <span><span class="dot memory"></span>기억</span>
+                                <span><span class="dot dialogue"></span>대화</span>
+                            </div>
+                        </div>
+                        <div class="compression-stat">
+                            <span class="label">컨텍스트 압축률:</span>
+                            <span id="compression-rate" class="val">98.5%</span>
+                            <span class="sub">(LTM 보관 덕분에 컨텍스트 절약)</span>
+                        </div>
+                    </div>
+
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-code"></i> AI에게 주입된 코드 청크</h4>
+                            <span id="injected-chunk-count" class="pill-count">0개</span>
+                        </div>
+                        <div id="injected-chunks-list" class="chunk-card-list">
+                            <p class="placeholder-text">질문을 전송하면 선별된 코드 청크가 여기에 표시됩니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="inspector-section">
+                        <div class="section-title-row">
+                            <h4><i class="fa-solid fa-bookmark"></i> 회상된 과거 결정 및 기억</h4>
+                            <span id="injected-memory-count" class="pill-count">0개</span>
+                        </div>
+                        <div id="injected-memories-list" class="memory-card-list">
+                            <p class="placeholder-text">회상된 에피소드 기억이 없습니다.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Long-Term Memory Manual Search -->
+                <div id="tab-search" class="tab-content">
+                    <div class="search-box">
+                        <input type="text" id="ltm-search-input" placeholder="함수명, 변수, 개념 검색 (예: login, auth)" />
+                        <button id="ltm-search-btn" class="btn btn-secondary"><i class="fa-solid fa-search"></i></button>
+                    </div>
+                    <div id="ltm-search-results" class="search-results-list">
+                        <p class="placeholder-text">검색어를 입력하여 장기 기억 장치를 직접 탐색해보세요.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Episodic Memories Timeline -->
+                <div id="tab-episodes" class="tab-content">
+                    <div class="section-title-row">
+                        <h4><i class="fa-solid fa-timeline"></i> 세션 타임라인</h4>
+                        <button id="refresh-episodes-btn" class="icon-btn-sm" title="새로고침"><i class="fa-solid fa-rotate"></i></button>
+                    </div>
+                    <div id="episodes-timeline-list" class="timeline-list">
+                        <p class="placeholder-text">저장된 에피소드가 없습니다.</p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- REPO MAP MODAL -->
+    <div id="repo-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-sitemap"></i> 프로젝트 구조도 (Repository Skeleton)</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="repo-map-content"></code></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
